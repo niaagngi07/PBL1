@@ -1,0 +1,8 @@
+[
+{
+  "directory": "E:/C++/PBL/PBL/build",
+  "command": "C:/msys64/ucrt64/bin/g++.exe   -g -o CMakeFiles/Josephus_Simple.dir/main.cpp.obj -c E:/C++/PBL/PBL/main.cpp",
+  "file": "E:/C++/PBL/PBL/main.cpp",
+  "output": "CMakeFiles/Josephus_Simple.dir/main.cpp.obj"
+}
+]
