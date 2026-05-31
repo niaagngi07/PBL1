@@ -25,21 +25,10 @@ float angLerp(float s, float e, float t) {
 
 ConvexShape buildRoundedRect(float w, float h, float r) {
   ConvexShape s(40);
-  for (int i = 0; i < 10; ++i) {
-    float a = i * PI / 18.f;
-    s.setPoint(i, {w - r + r * cos(a), h - r + r * sin(a)});
-  }
-  for (int i = 0; i < 10; ++i) {
-    float a = PI / 2 + i * PI / 18.f;
-    s.setPoint(10 + i, {r + r * cos(a), h - r + r * sin(a)});
-  }
-  for (int i = 0; i < 10; ++i) {
-    float a = PI + i * PI / 18.f;
-    s.setPoint(20 + i, {r + r * cos(a), r + r * sin(a)});
-  }
-  for (int i = 0; i < 10; ++i) {
-    float a = 3 * PI / 2 + i * PI / 18.f;
-    s.setPoint(30 + i, {w - r + r * cos(a), r + r * sin(a)});
+  for (int i = 0; i < 40; ++i) {
+    float a = i * PI / 18.f, cx = (i < 10 || i >= 30) ? w - r : r,
+          cy = i < 20 ? h - r : r;
+    s.setPoint(i, {cx + r * cos(a), cy + r * sin(a)});
   }
   return s;
 }
@@ -106,6 +95,7 @@ struct Person {
   bool alive = true;
   float angle, curR, tgtR;
   Color cOut, tOut, cFill, tFill, cTxt, tTxt;
+  float curScale = 1.f, tgtScale = 1.f;
 };
 
 struct SmokeParticle {
@@ -132,15 +122,118 @@ struct SmokeParticle {
   }
 };
 
+class ArrowShape : public sf::Drawable, public sf::Transformable {
+  sf::VertexArray verts;
+  sf::Color color;
+
+  void addQuad(sf::Vector2f p1, sf::Vector2f p2, sf::Vector2f p3,
+               sf::Vector2f p4) {
+    verts.append(sf::Vertex(p1, color));
+    verts.append(sf::Vertex(p2, color));
+    verts.append(sf::Vertex(p3, color));
+    verts.append(sf::Vertex(p1, color));
+    verts.append(sf::Vertex(p3, color));
+    verts.append(sf::Vertex(p4, color));
+  }
+
+public:
+  ArrowShape() : verts(sf::Triangles), color(sf::Color::White) {}
+
+  void setFillColor(sf::Color c) {
+    color = c;
+    for (std::size_t i = 0; i < verts.getVertexCount(); ++i)
+      verts[i].color = c;
+  }
+
+  void upd(float l) {
+    verts.clear();
+    float s = l / 450.f, bw = 2.f * s, hw = 20.f * s, tip = l - 30.f * s,
+          bh = l - 70.f * s;
+    addQuad({0, -bw}, {bh, -bw}, {bh, bw}, {0, bw});
+    Vector2f otl(bh, -hw), obl(bh, hw), otip(tip, 0), hl(bh + 7.f * s, 0),
+        ht(bh + 15.f * s, -8.f * s), hr(bh + 23.f * s, 0),
+        hb(bh + 15.f * s, 8.f * s);
+    auto aT = [&](Vector2f a, Vector2f b, Vector2f c) {
+      verts.append(sf::Vertex(a, color));
+      verts.append(sf::Vertex(b, color));
+      verts.append(sf::Vertex(c, color));
+    };
+    aT(otl, hl, ht);
+    aT(otl, ht, otip);
+    aT(ht, hr, otip);
+    aT(obl, hb, hl);
+    aT(obl, otip, hb);
+    aT(hb, otip, hr);
+    aT(otl, obl, hl);
+  }
+
+  virtual void draw(sf::RenderTarget &target,
+                    sf::RenderStates states) const override {
+    states.transform *= getTransform();
+    target.draw(verts, states);
+  }
+};
+
 enum State { Menu, Sim };
 enum SimState { Ready, Step, WaitElim, AnimElim, AnimRet, Over };
+
+struct SpeakerIcon {
+  Vector2f pos;
+  float size = 40.f;
+  bool isMuted = false;
+  bool hov = false;
+
+  SpeakerIcon(Vector2f p = {0, 0}) : pos(p) {}
+
+  bool update(Vector2f mPos) {
+    FloatRect bounds(pos.x, pos.y, size * 1.5f, size);
+    hov = bounds.contains(mPos);
+    return hov;
+  }
+
+  void draw(RenderWindow &win) {
+    Color col = hov ? Color::Yellow : Color::White;
+
+    ConvexShape b(6);
+    b.setPoint(0, {0, size * 0.3f});
+    b.setPoint(1, {size * 0.3f, size * 0.3f});
+    b.setPoint(2, {size * 0.7f, 0});
+    b.setPoint(3, {size * 0.7f, size});
+    b.setPoint(4, {size * 0.3f, size * 0.7f});
+    b.setPoint(5, {0, size * 0.7f});
+    b.setPosition(pos);
+    b.setFillColor(col);
+    win.draw(b);
+
+    auto aR = [&](float w, float h, float ox, float oy, float rx, float ry,
+                  float rot, Color c) {
+      RectangleShape r({w, h});
+      r.setOrigin(ox, oy);
+      r.setPosition(pos.x + rx, pos.y + ry);
+      r.setRotation(rot);
+      r.setFillColor(c);
+      win.draw(r);
+    };
+    if (!isMuted) {
+      aR(4, size * 0.4f, 2, size * 0.2f, size * 0.9f, size * 0.5f, 0, col);
+      aR(4, size * 0.6f, 2, size * 0.3f, size * 1.15f, size * 0.5f, 0, col);
+    } else {
+      aR(size * 0.6f, 4, size * 0.3f, 2, size * 1.05f, size * 0.5f, 45,
+         Color::Red);
+      aR(size * 0.6f, 4, size * 0.3f, 2, size * 1.05f, size * 0.5f, -45,
+         Color::Red);
+    }
+  }
+};
 
 // --- Main App ---
 class JosephusApp {
   RenderWindow win;
   int n = 10, k = 3, start = 1, curIdx = 0, step = 0, aliveCnt = 0,
       lastElim = -1;
-  Music bgM, eliM, winM, horseM;
+  Music bgM;
+  SoundBuffer eliBuf, winBuf, horseBuf;
+  Sound eliM, winM, horseM;
   Texture bgT, horseNormalT, horseAggroT, flagT;
   Sprite bgS, horseS;
   vector<Sprite> flags;
@@ -150,29 +243,23 @@ class JosephusApp {
 
   Text lblN, lblK, lblS, title, hud, vicTxt;
   UIElement bNm, bNp, bKm, bKp, bSm, bSp, btnStart, tbN, tbK, tbS;
+  SpeakerIcon btnMute;
+  bool isMuted = false;
 
   State state = Menu;
   SimState sState = Ready;
   vector<Person> ppl;
   Vector2f ctr = {950, 600};
   float mRad = 450.f, oRad = 550.f;
-  ConvexShape hudBg, arrow;
+  ConvexShape hudBg;
+  ArrowShape arrow;
   float curRot = 0, tgtRot = 0, curArrL = 450.f;
   string lastHud;
   Clock t, appClock;
   float animP = 0.f;
   float horseShowTime = 0.f;
 
-  void updArrow(float l) {
-    arrow.setPointCount(7);
-    arrow.setPoint(0, {0, -6});
-    arrow.setPoint(1, {l - 70, -6});
-    arrow.setPoint(2, {l - 70, -18});
-    arrow.setPoint(3, {l - 30, 0});
-    arrow.setPoint(4, {l - 70, 18});
-    arrow.setPoint(5, {l - 70, 6});
-    arrow.setPoint(6, {0, 6});
-  }
+  void updArrow(float l) { arrow.upd(l); }
 
   void setup() {
     ppl.clear();
@@ -180,7 +267,15 @@ class JosephusApp {
     step = 0;
     lastElim = -1;
     curIdx = (start - 1) % n;
-    float r = min(35.f, (2 * PI * mRad * 0.7f) / (2.f * n));
+    mRad = max(150.f, n * 16.f);
+    oRad = mRad + max(100.f, mRad * 0.2f);
+
+    float reqRad = oRad + 50.f;
+    float viewH = max(1200.f, reqRad * 2.f);
+    float zoom = viewH / 1200.f;
+
+    float cSize = max(35.f * 1.1f, 14.f * zoom);
+    float r = cSize / 1.1f;
 
     for (int i = 0; i < n; i++) {
       Person p;
@@ -189,14 +284,17 @@ class JosephusApp {
       p.curR = p.tgtR = mRad;
       p.shape.setRadius(r);
       p.shape.setOrigin(r, r);
-      p.shape.setOutlineThickness(4);
-      p.cFill = p.tFill = Color(0, 0, 0, 150);
+      p.shape.setOutlineThickness(max(4.f, 2.f * zoom));
+      p.cFill = p.tFill = Color(0, 0, 0, 255);
       p.cOut = p.tOut = (p.id == start) ? Color::Yellow : Color::Green;
       p.cTxt = p.tTxt = Color::White;
 
       p.idText.setFont(font);
       p.idText.setString(to_string(p.id));
-      p.idText.setCharacterSize(r * 1.1f);
+      p.idText.setCharacterSize(cSize);
+      p.idText.setOutlineColor(Color(0, 0, 0, 200));
+      p.idText.setOutlineThickness(1.5f * zoom);
+
       FloatRect b = p.idText.getLocalBounds();
       p.idText.setOrigin(b.left + b.width / 2.f, b.top + b.height / 2.f);
       ppl.push_back(p);
@@ -209,36 +307,29 @@ class JosephusApp {
 
 public:
   JosephusApp() : win(VideoMode(1900, 1200), "Josephus") {
-    win.setFramerateLimit(60);
+    win.setFramerateLimit(240);
     font.loadFromFile("C:/Windows/Fonts/arial.ttf");
-    tFont.loadFromFile("C:/Windows/Fonts/impact.ttf");
+    tFont.loadFromFile("CinzelDecorative-Bold.otf");
     if (bgT.loadFromFile("bg_war.png")) {
       bgS.setTexture(bgT);
       bgS.setScale(1900.f / bgT.getSize().x, 1200.f / bgT.getSize().y);
       hasBg = true;
     }
-    Image hN, hA;
+    auto key = [](Image &img, Color bg) {
+      for (unsigned x = 0; x < img.getSize().x; ++x)
+        for (unsigned y = 0; y < img.getSize().y; ++y) {
+          Color c = img.getPixel(x, y);
+          if (abs((int)c.r - bg.r) + abs((int)c.g - bg.g) +
+                  abs((int)c.b - bg.b) <
+              60)
+            img.setPixel(x, y, Color(0, 0, 0, 0));
+        }
+    };
+    Image hN, hA, fImg;
     if (hN.loadFromFile("horse_normal.png") &&
         hA.loadFromFile("horse_aggro.png")) {
-      Color bgN = hN.getPixel(0, 0), bgA = hA.getPixel(0, 0);
-      for (unsigned int x = 0; x < hN.getSize().x; ++x)
-        for (unsigned int y = 0; y < hN.getSize().y; ++y) {
-          Color c = hN.getPixel(x, y);
-          if (std::abs((int)c.r - (int)bgN.r) +
-                  std::abs((int)c.g - (int)bgN.g) +
-                  std::abs((int)c.b - (int)bgN.b) <
-              60)
-            hN.setPixel(x, y, Color(0, 0, 0, 0));
-        }
-      for (unsigned int x = 0; x < hA.getSize().x; ++x)
-        for (unsigned int y = 0; y < hA.getSize().y; ++y) {
-          Color c = hA.getPixel(x, y);
-          if (std::abs((int)c.r - (int)bgA.r) +
-                  std::abs((int)c.g - (int)bgA.g) +
-                  std::abs((int)c.b - (int)bgA.b) <
-              60)
-            hA.setPixel(x, y, Color(0, 0, 0, 0));
-        }
+      key(hN, hN.getPixel(0, 0));
+      key(hA, hA.getPixel(0, 0));
       horseNormalT.loadFromImage(hN);
       horseAggroT.loadFromImage(hA);
       horseS.setTexture(horseNormalT);
@@ -247,18 +338,8 @@ public:
       horseS.setScale(0.3f, 0.3f);
       hasHorse = true;
     }
-    Image fImg;
     if (fImg.loadFromFile("flag.png")) {
-      Color bgF = fImg.getPixel(0, 0);
-      for (unsigned int x = 0; x < fImg.getSize().x; ++x)
-        for (unsigned int y = 0; y < fImg.getSize().y; ++y) {
-          Color c = fImg.getPixel(x, y);
-          if (std::abs((int)c.r - (int)bgF.r) +
-                  std::abs((int)c.g - (int)bgF.g) +
-                  std::abs((int)c.b - (int)bgF.b) <
-              60)
-            fImg.setPixel(x, y, Color(0, 0, 0, 0));
-        }
+      key(fImg, fImg.getPixel(0, 0));
       flagT.loadFromImage(fImg);
       for (int i = 0; i < 8; i++) {
         Sprite fs(flagT);
@@ -271,13 +352,16 @@ public:
       }
       hasFlag = true;
     }
-    bgM.openFromFile("nhac-xo-so.wav");
+    bgM.openFromFile("theme.wav");
     bgM.setLoop(true);
     bgM.setVolume(50);
     bgM.play();
-    eliM.openFromFile("eli.wav");
-    winM.openFromFile("win.wav");
-    horseM.openFromFile("horse.wav");
+    if (eliBuf.loadFromFile("eli.wav"))
+      eliM.setBuffer(eliBuf);
+    if (winBuf.loadFromFile("win.wav"))
+      winM.setBuffer(winBuf);
+    if (horseBuf.loadFromFile("horse.wav"))
+      horseM.setBuffer(horseBuf);
 
     lblN = Text("Soldiers (N):", font, 30);
     FloatRect bN = lblN.getLocalBounds();
@@ -304,6 +388,7 @@ public:
     bSp = UIElement(1000, 660, 50, 50, "+", font);
 
     btnStart = UIElement(850, 750, 200, 60, "START", font);
+    btnMute = SpeakerIcon({20, 1140});
 
     title = Text("JOSEPHUS SIMULATION", tFont, 90);
     title.setFillColor(Color::Yellow);
@@ -318,7 +403,7 @@ public:
     hud = Text("", font, 24);
     vicTxt = Text("", font, 40);
     vicTxt.setFillColor(Color::Yellow);
-    arrow.setFillColor(Color::Cyan);
+    arrow.setFillColor(Color::White);
     arrow.setPosition(ctr);
   }
 
@@ -329,19 +414,28 @@ public:
       while (win.pollEvent(e)) {
         if (e.type == Event::Closed)
           win.close();
+
+        if (e.type == Event::MouseButtonPressed && btnMute.update(mPos)) {
+          isMuted = !isMuted;
+          btnMute.isMuted = isMuted;
+          bgM.setVolume(isMuted ? 0.f : 50.f);
+          eliM.setVolume(isMuted ? 0.f : 100.f);
+          winM.setVolume(isMuted ? 0.f : 100.f);
+          horseM.setVolume(isMuted ? 0.f : 100.f);
+        }
+
         if (state == Menu) {
           tbN.handle(e);
           tbK.handle(e);
           tbS.handle(e);
           if (e.type == Event::MouseButtonPressed) {
-            tbN.isSel = tbN.rect.getGlobalBounds().contains(mPos);
-            tbK.isSel = tbK.rect.getGlobalBounds().contains(mPos);
-            tbS.isSel = tbS.rect.getGlobalBounds().contains(mPos);
-
-            n = stoi(tbN.val.empty() ? "1" : tbN.val);
-            k = stoi(tbK.val.empty() ? "1" : tbK.val);
-            start = stoi(tbS.val.empty() ? "1" : tbS.val);
-
+            UIElement *tbs[] = {&tbN, &tbK, &tbS};
+            for (auto t : tbs)
+              t->isSel = t->rect.getGlobalBounds().contains(mPos);
+            auto val = [](string s) { return stoi(s.empty() ? "1" : s); };
+            n = val(tbN.val);
+            k = val(tbK.val);
+            start = val(tbS.val);
             if (bNp.update(mPos))
               n++;
             if (bNm.update(mPos) && n > 2)
@@ -354,14 +448,12 @@ public:
               start++;
             if (bSm.update(mPos) && start > 1)
               start--;
-
             start = min(start, n);
             tbN.val = to_string(n);
             tbK.val = to_string(k);
             tbS.val = to_string(start);
-            tbN.updText();
-            tbK.updText();
-            tbS.updText();
+            for (auto t : tbs)
+              t->updText();
 
             if (btnStart.update(mPos)) {
               n = max(2, n);
@@ -397,7 +489,7 @@ public:
           ppl[curIdx].alive = false;
           ppl[curIdx].tgtR = oRad;
           ppl[curIdx].tOut = Color(255, 50, 50);
-          ppl[curIdx].tFill = Color(80, 0, 0, 150);
+          ppl[curIdx].tFill = Color(80, 0, 0, 255);
           ppl[curIdx].tTxt = Color(150, 150, 150);
           eliM.play();
           horseM.play();
@@ -413,7 +505,13 @@ public:
             }
           }
         } else if (sState == AnimElim) {
-          animP = min(1.f, animP + 0.02f);
+          animP = min(1.f, animP + 0.008f);
+          if (animP < 0.3f) {
+            ppl[curIdx].tgtScale = 1.0f + (animP / 0.3f) * 0.8f;
+          } else {
+            ppl[curIdx].tgtScale = 1.0f + (1.0f - (animP - 0.3f) / 0.7f) * 0.8f;
+          }
+
           if (animP == 1.f && t.getElapsedTime().asSeconds() > 2.0f) {
             sState = AnimRet;
             animP = 0.f;
@@ -460,6 +558,11 @@ public:
           p.shape.setOutlineColor(p.cOut = lerpCol(p.cOut, p.tOut, 0.1f));
           p.shape.setFillColor(p.cFill = lerpCol(p.cFill, p.tFill, 0.1f));
           p.idText.setFillColor(p.cTxt = lerpCol(p.cTxt, p.tTxt, 0.1f));
+
+          if (abs(p.curScale - p.tgtScale) > 0.001f)
+            p.curScale += (p.tgtScale - p.curScale) * 0.05f;
+          p.shape.setScale(p.curScale, p.curScale);
+          p.idText.setScale(p.curScale, p.curScale);
         }
 
         for (auto it = smokes.begin(); it != smokes.end();) {
@@ -488,6 +591,7 @@ public:
       }
 
       // Draw
+      win.setView(win.getDefaultView());
       win.clear({30, 30, 30});
       if (hasBg)
         win.draw(bgS);
@@ -495,53 +599,68 @@ public:
         RectangleShape ov({1900, 1200});
         ov.setFillColor({0, 0, 0, 180});
         win.draw(ov);
-        bNm.update(mPos);
-        bNp.update(mPos);
-        tbN.update(mPos);
-        bKm.update(mPos);
-        bKp.update(mPos);
-        tbK.update(mPos);
-        bSm.update(mPos);
-        bSp.update(mPos);
-        tbS.update(mPos);
-        btnStart.update(mPos);
-
+        UIElement *uis[] = {&bNm, &bNp, &tbN, &bKm, &bKp,
+                            &tbK, &bSm, &bSp, &tbS, &btnStart};
+        for (auto u : uis) {
+          u->update(mPos);
+          u->draw(win);
+        }
         win.draw(title);
         win.draw(lblN);
-        bNm.draw(win);
-        tbN.draw(win);
-        bNp.draw(win);
         win.draw(lblK);
-        bKm.draw(win);
-        tbK.draw(win);
-        bKp.draw(win);
         win.draw(lblS);
-        bSm.draw(win);
-        tbS.draw(win);
-        bSp.draw(win);
-        btnStart.draw(win);
       } else {
-        CircleShape cp(mRad + 15);
-        cp.setOrigin(mRad + 15, mRad + 15);
+        sf::View defaultView = win.getDefaultView();
+        float reqRad = oRad + 50.f;
+        float viewH = reqRad * 2.f;
+        if (viewH < 1200.f)
+          viewH = 1200.f;
+        float viewW = viewH * (1900.f / 1200.f);
+        sf::View simView(ctr, {viewW, viewH});
+        win.setView(simView);
+
+        float mScale = mRad / 450.f;
+        CircleShape cp(mRad + 15.f * mScale);
+        cp.setOrigin(mRad + 15.f * mScale, mRad + 15.f * mScale);
         cp.setPosition(ctr);
         cp.setFillColor({0, 0, 0, 100});
-        cp.setOutlineThickness(3);
+        cp.setOutlineThickness(3.f * mScale);
         win.draw(cp);
-        for (auto &p : ppl) {
-          win.draw(p.shape);
-          win.draw(p.idText);
+
+        for (int i = 0; i < n; i++) {
+          if (ppl[i].alive && i != curIdx) {
+            win.draw(ppl[i].shape);
+            win.draw(ppl[i].idText);
+          }
+        }
+        for (int i = 0; i < n; i++) {
+          if (!ppl[i].alive && i != curIdx) {
+            win.draw(ppl[i].shape);
+            win.draw(ppl[i].idText);
+          }
+        }
+        if (curIdx >= 0 && curIdx < n) {
+          win.draw(ppl[curIdx].shape);
+          win.draw(ppl[curIdx].idText);
         }
         win.draw(arrow);
+
         if (hasFlag) {
           float gRot = appClock.getElapsedTime().asSeconds() * 20.f;
+          float flagScale = 0.15f * mScale;
+          float flagDist = 120.f * mScale;
           for (int i = 0; i < 8; i++) {
             auto &f = flags[i];
             float a = (i * 360.f / 8.f + gRot) * PI / 180.f;
-            f.setPosition(950 + 120 * cos(a), 600 + 120 * sin(a));
+            f.setScale(flagScale, flagScale);
+            f.setPosition(ctr.x + flagDist * cos(a), ctr.y + flagDist * sin(a));
             f.setRotation(a * 180.f / PI + 90.f);
             win.draw(f);
           }
         }
+
+        win.setView(defaultView);
+
         if (hasHorse) {
           if (horseShowTime > 0.f) {
             horseS.setTexture(horseAggroT);
@@ -564,7 +683,7 @@ public:
                            " IS THE WINNER!");
           FloatRect vr = vicTxt.getLocalBounds();
           vicTxt.setOrigin(vr.left + vr.width / 2.f, vr.top + vr.height / 2.f);
-          vicTxt.setPosition(ctr.x, ctr.y + mRad / 2 + 50);
+          vicTxt.setPosition(950.f, 600.f);
           RectangleShape wb({vr.width + 40, vr.height + 40});
           wb.setOrigin(wb.getSize().x / 2.f, wb.getSize().y / 2.f);
           wb.setPosition(vicTxt.getPosition());
@@ -575,6 +694,10 @@ public:
           win.draw(vicTxt);
         }
       }
+
+      btnMute.update(mPos);
+      btnMute.draw(win);
+
       win.display();
     }
   }
