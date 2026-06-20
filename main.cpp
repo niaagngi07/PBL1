@@ -147,24 +147,39 @@ public:
 
   void upd(float l) {
     verts.clear();
-    float s = l / 450.f, bw = 2.f * s, hw = 20.f * s, tip = l - 30.f * s,
-          bh = l - 70.f * s;
-    addQuad({0, -bw}, {bh, -bw}, {bh, bw}, {0, bw});
-    Vector2f otl(bh, -hw), obl(bh, hw), otip(tip, 0), hl(bh + 7.f * s, 0),
-        ht(bh + 15.f * s, -8.f * s), hr(bh + 23.f * s, 0),
-        hb(bh + 15.f * s, 8.f * s);
-    auto aT = [&](Vector2f a, Vector2f b, Vector2f c) {
-      verts.append(sf::Vertex(a, color));
-      verts.append(sf::Vertex(b, color));
-      verts.append(sf::Vertex(c, color));
-    };
-    aT(otl, hl, ht);
-    aT(otl, ht, otip);
-    aT(ht, hr, otip);
-    aT(obl, hb, hl);
-    aT(obl, otip, hb);
-    aT(hb, otip, hr);
-    aT(otl, obl, hl);
+    float s = l / 450.f;
+    float bw = 5.f * s;
+    float W = 2.f * bw;
+
+    float a1 = 66.f * s;
+    float a2 = 21.6f * s;
+    float b = 28.8f * s;
+    float cx = l - a1 - 10.f * s;
+
+    Vector2f Ro(cx + a1, 0), Lo(cx - a2, 0), To(cx, -b), Bo(cx, b);
+
+    float L1 = sqrt(a1 * a1 + b * b);
+    float L2 = sqrt(a2 * a2 + b * b);
+
+    float ti_y = W * (L1 + L2) / (a1 + a2) - b;
+    float ti_x = (W / b) * (L2 * a1 - L1 * a2) / (a1 + a2);
+
+    Vector2f Ti(cx + ti_x, ti_y);
+    Vector2f Bi(cx + ti_x, -ti_y);
+
+    float ri_x = a1 - W * L1 / b;
+    Vector2f Ri(cx + ri_x, 0);
+
+    float li_x = -a2 + W * L2 / b;
+    Vector2f Li(cx + li_x, 0);
+
+    float x_end = cx - a2 + a2 * (bw / b);
+    addQuad({0, -bw}, {x_end, -bw}, {x_end, bw}, {0, bw});
+
+    addQuad(Ro, To, Ti, Ri);
+    addQuad(To, Lo, Li, Ti);
+    addQuad(Lo, Bo, Bi, Li);
+    addQuad(Bo, Ro, Ri, Bi);
   }
 
   virtual void draw(sf::RenderTarget &target,
@@ -301,7 +316,7 @@ class JosephusApp {
     }
     tgtRot = curRot = curIdx * 360.f / n - 90.f;
     arrow.setRotation(curRot);
-    updArrow(curArrL = mRad);
+    updArrow(curArrL = mRad * 0.9f);
     sState = Ready;
   }
 
@@ -352,7 +367,7 @@ public:
       }
       hasFlag = true;
     }
-    bgM.openFromFile("theme.wav");
+    bgM.openFromFile("nhac-xo-so.wav");
     bgM.setLoop(true);
     bgM.setVolume(50);
     bgM.play();
@@ -545,7 +560,7 @@ public:
         // Animate
         if (abs(curRot - tgtRot) > 0.1f)
           arrow.setRotation(curRot = angLerp(curRot, tgtRot, 0.05f));
-        float tLen = (sState == AnimElim) ? oRad : mRad;
+        float tLen = (sState == AnimElim) ? oRad * 0.9f : mRad * 0.9f;
         if (abs(curArrL - tLen) > 0.1f)
           updArrow(curArrL += (tLen - curArrL) * 0.05f);
 
@@ -644,6 +659,14 @@ public:
           win.draw(ppl[curIdx].idText);
         }
         win.draw(arrow);
+        
+        float arrS = curArrL / 450.f;
+        float dotRad = 20.f * arrS; 
+        CircleShape dot(dotRad);
+        dot.setOrigin(dotRad, dotRad);
+        dot.setPosition(ctr);
+        dot.setFillColor(Color::White);
+        win.draw(dot);
 
         if (hasFlag) {
           float gRot = appClock.getElapsedTime().asSeconds() * 20.f;
